@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>IPAddressChecker</title>
+
+<script type="text/javascript">
+
+// the original back-end service source
+let totalIPURL = "http://localhost:70/";
+let totalEmptyIPURL = "http://localhost:90/";
+
+// new back-end services
+let validIPURL = "http://localhost:3000/"; // Python - Function 1
+let classifierURL = "http://localhost:3001/"; // Node.js - Function 2  
+let countryURL = "http://localhost:8080/"; // Go - Function 3
+let badIPURL = "http://localhost:8081/"; // Ruby - Function 4
+
+// For QPC deployment, use this one: 
+// let validIPURL = "http://validips.40392749.qpc.qubcloud.uk/";
+// let classifierURL = "http://classifier.40392749.qpc.qubcloud.uk/";
+// let countryURL = "http://country.40392749.qpc.qubcloud.uk/";
+// let badIPURL = "http://badips.40392749.qpc.qubcloud.uk/";
+
+// original functions
+function displayTotalIP(total_ips)
+{
+    document.getElementById('output-text').value = 'Total IP addresses = ' + total_ips;
+
+}
+
+function displayTotalEmpty(total_empty_ips)
+{
+    document.getElementById('output-text').value = 'Total empty IP addresses = ' + total_empty_ips;
+
+
+}
+
+function clearText()
+{
+    document.getElementById('input-text').value = '';
+    document.getElementById('output-text').value = '';
+}
+
+function getTotalIPs()
+{
+  let items = document.getElementById('input-text').value
+
+  let xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+      if (this.readyState == 4 && this.status == 200) {
+          //let response = this.response
+          var j = JSON.parse(this.response);
+          console.log('test -- ' + j.total_ips);
+          let total_ips = j.total_ips;
+          displayTotalIP(total_ips);
+
+      }
+  };
+  xhttp.open("GET",totalIPURL+"?items=" + items);
+  xhttp.send();
+  return;
+}
+
+function getTotalEmptyIPs()
+{
+  let items = document.getElementById('input-text').value
+
+  let xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+      if (this.readyState == 4 && this.status == 200) {
+          //let response = this.response
+          var j = JSON.parse(this.response);
+          console.log('test -- ' + j.total_empty_ips);
+          let total_empty_ips = j.total_empty_ips;
+          displayTotalEmpty(total_empty_ips);
+
+      }
+  };
+  xhttp.open("GET",totalEmptyIPURL+"?items=" + items);
+  xhttp.send();
+  return;
+}
+
+// new functions
+// valid IPs
+
+function getTotalValidIPs()
+{
+  let items = document.getElementById('input-text').value.trim();
+  
+  if (!items) {
+      document.getElementById('output-text').value = 'Error: Please enter IP addresses';
+      return;
+  }
+
+  let xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+      if (this.readyState == 4 && this.status == 200) {
+          try {
+              var j = JSON.parse(this.response);
+              console.log('Valid IPs response:', j);
+              
+              let output = '';
+              if (j.error) {
+                  output = 'Error: ' + j.error;
+              } else {
+                  output = 'Total valid IP addresses = ' + j.valid_count + '\n';
+                  output += 'Total items = ' + j.total_items + '\n\n';
+                  
+                  if (j.details && j.details.length > 0) {
+                      output += 'Details:\n';
+                      j.details.forEach(item => {
+                          const status = item.valid ? 'Valid' : 'Invalid';
+                          const type = item.type ? ' (' + item.type + ')' : '';
+                          const reason = item.reason ? ' - ' + item.reason : '';
+                          output += '  ' + (item.ip || '[empty]') + ': ' + status + type + reason + '\n';
+                      });
+                  }
+              }
+              
+              document.getElementById('output-text').value = output;
+          } catch (e) {
+              document.getElementById('output-text').value = 'Error parsing response: ' + e.message;
+          }
+      } else if (this.readyState == 4) {
+          document.getElementById('output-text').value = 'Error: Failed to connect to service (status: ' + this.status + ')';
+      }
+  };
+  
+  xhttp.open("GET", validIPURL + "?items=" + encodeURIComponent(items));
+  xhttp.send();
+}
+
+// classify IPs
+function classifyIPs()
+{
+  let items = document.getElementById('input-text').value.trim();
+  
+  if (!items) {
+      document.getElementById('output-text').value = 'Error: Please enter IP addresses';
+      return;
+  }
+
+  let xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+      if (this.readyState == 4 && this.status == 200) {
+          try {
+              var j = JSON.parse(this.response);
+              console.log('Classifier response:', j);
+              
+              let output = '';
+              if (j.error) {
+                  output = 'Error: ' + j.error;
+              } else {
+                  output = 'IPv4 count = ' + j.ipv4_count + '\n';
+                  output += 'IPv6 count = ' + j.ipv6_count + '\n';
+                  output += 'Invalid count = ' + (j.invalid_count || j.unknown_count || 0) + '\n';
+                  output += 'Total items = ' + j.total_items + '\n\n';
+                  
+                  // Handle both 'details' and 'classifications' field names
+                  const items = j.details || j.classifications || [];
+                  if (items.length > 0) {
+                      output += 'Classifications:\n';
+                      items.forEach(item => {
+                          const icon = item.type === 'IPv4' ? '[IPv4]' :
+                                      item.type === 'IPv6' ? '[IPv6]' : 
+                                      item.type === 'invalid' ? '[INVALID]' : '[Unknown]';
+                          const reason = item.reason ? ' - ' + item.reason : '';
+                          output += '  ' + icon + ' ' + (item.ip || '[empty]') + reason + '\n';
+                      });
+                  }
+              }
+              
+              document.getElementById('output-text').value = output;
+          } catch (e) {
+              document.getElementById('output-text').value = 'Error parsing response: ' + e.message;
+          }
+      } else if (this.readyState == 4) {
+          document.getElementById('output-text').value = 'Error: Failed to connect to service (status: ' + this.status + ')';
+      }
+  };
+  
+  xhttp.open("GET", classifierURL + "?items=" + encodeURIComponent(items));
+  xhttp.send();
+}
+
+// country
+function findCountry()
+{
+  let items = document.getElementById('input-text').value.trim();
+  
+  if (!items) {
+      document.getElementById('output-text').value = 'Error: Please enter IP addresses';
+      return;
+  }
+
+  let xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+      if (this.readyState == 4 && this.status == 200) {
+          try {
+              var j = JSON.parse(this.response);
+              console.log('Country response:', j);
+              
+              let output = '';
+              if (j.error) {
+                  output = 'Error: ' + j.error;
+              } else {
+                  output = 'Total items = ' + j.total_items + '\n\n';
+                  
+                  if (j.country_results && j.country_results.length > 0) {
+                      output += 'Country Results:\n';
+                      j.country_results.forEach(item => {
+                          // enhanced country flags for more countries
+                          let flag = '[??]';
+                          switch(item.country) {
+                              case 'US': flag = '🇺🇸'; break;
+                              case 'UK': flag = '🇬🇧'; break;
+                              case 'China': flag = '🇨🇳'; break;
+                              case 'Germany': flag = '🇩🇪'; break;
+                              case 'France': flag = '🇫🇷'; break;
+                              case 'Japan': flag = '🇯🇵'; break;
+                              case 'Canada': flag = '🇨🇦'; break;
+                              case 'Australia': flag = '🇦🇺'; break;
+                              case 'Brazil': flag = '🇧🇷'; break;
+                              case 'India': flag = '🇮🇳'; break;
+                              case 'Russia': flag = '🇷🇺'; break;
+                              case 'South Korea': flag = '🇰🇷'; break;
+                              case 'Italy': flag = '🇮🇹'; break;
+                              case 'Spain': flag = '🇪🇸'; break;
+                              case 'Netherlands': flag = '🇳🇱'; break;
+                              case 'Sweden': flag = '🇸🇪'; break;
+                              case 'Europe': flag = '🇪🇺'; break;
+                              case 'Asia Pacific': flag = '🌏'; break;
+                              case 'Latin America': flag = '🌎'; break;
+                              case 'Global Unicast': flag = '🌍'; break;
+                              case 'Private Network': flag = '🔒'; break;
+                              case 'Localhost': flag = '💻'; break;
+                              case 'Link Local': flag = '🔗'; break;
+                              case 'Country Unavailable': flag = '❓'; break;
+                              case 'Unknown': flag = '❓'; break;
+                          }
+                          
+                          const reason = item.reason ? ' (' + item.reason + ')' : '';
+                          output += '  ' + flag + ' ' + (item.ip || '[empty]') + ': ' + item.country + reason + '\n';
+                      });
+                  }
+              }
+              
+              document.getElementById('output-text').value = output;
+          } catch (e) {
+              document.getElementById('output-text').value = 'Error parsing response: ' + e.message;
+          }
+      } else if (this.readyState == 4) {
+          document.getElementById('output-text').value = 'Error: Failed to connect to service (status: ' + this.status + ')';
+      }
+  };
+  
+  xhttp.open("GET", countryURL + "?items=" + encodeURIComponent(items));
+  xhttp.send();
+}
+
+// bad IPs check
+
+function findBadIPs()
+{
+  let items = document.getElementById('input-text').value.trim();
+  
+  if (!items) {
+      document.getElementById('output-text').value = 'Error: Please enter IP addresses';
+      return;
+  }
+
+  let xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+      if (this.readyState == 4 && this.status == 200) {
+          try {
+              var j = JSON.parse(this.response);
+              console.log('Bad IPs response:', j);
+              
+              let output = '';
+              if (j.error) {
+                  output = 'Error: ' + j.error;
+              } else {
+                  output = 'Bad IP count = ' + j.bad_ip_count + '\n';
+                  output += 'Good IP count = ' + j.good_ip_count + '\n';
+                  output += 'Total items = ' + j.total_items + '\n\n';
+                  
+                  if (j.results && j.results.length > 0) {
+                      output += 'Results:\n';
+                      j.results.forEach(item => {
+                          const icon = item.status === 'Bad IP' ? '❌' :
+                                      item.status === 'Good IP' ? '✅' : '❓';
+                          const reason = item.reason ? ' (' + item.reason + ')' : '';
+                          const displayIP = item.ip === '' ? '[empty]' : item.ip;
+                          output += '  ' + icon + ' ' + displayIP + ': ' + item.status + reason + '\n';
+                      });
+                  }
+              }
+              
+              document.getElementById('output-text').value = output;
+          } catch (e) {
+              document.getElementById('output-text').value = 'Error parsing response: ' + e.message;
+          }
+      } else if (this.readyState == 4) {
+          document.getElementById('output-text').value = 'Error: Failed to connect to service (status: ' + this.status + ')';
+      }
+  };
+  
+  xhttp.open("GET", badIPURL + "?items=" + encodeURIComponent(items));
+  xhttp.send();
+}
+
+</script>
+
+<style type="text/css">
+body  {
+    font-size: 150%;
+    font-family: monospace;
+}
+label {
+    display: inline-block;
+    width: 150px;
+    text-align: left;
+}
+#logo
+{
+    font-family: Calibri, sans-serif;
+    font-weight: lighter;
+    font-size: 30px;
+    color: #505050;
+    margin: 0.5em;
+}
+#normal-text
+{
+    font-family: Calibri, sans-serif;
+    font-size: 20px;
+    margin: 0.5em;
+}
+#ipcheck
+{
+    text-align: center;
+    margin-top: 1em;
+}
+#input-div
+{
+    text-align: center;
+    margin-top: 1em;
+    background-color:#d5d8dc;
+}
+#output-div
+{
+    text-align: center;
+    background-color:#808b96;
+}
+
+.input-items {
+      font-size: 90%;
+      color: black;
+      background-color:white;
+      padding: 0.2em;
+      margin: 0.2em;
+      font-family: monospace;
+      letter-spacing: 0.1em;
+      width: 600px;
+}
+
+.display-output {
+    font-size: 90%;
+    color: black;
+    background-color:white;
+    padding: 0.2em;
+    margin: 0.2em;
+    font-family: monospace;
+    letter-spacing: 0.1em;
+    width: 600px;
+
+}
+
+.button-active {
+    background-color: #2874a6;
+    color: white;
+    padding: 0px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 18px;
+    margin: 4px 2px;
+    cursor: pointer;
+    height: 50px;
+    width: 400px;
+}
+
+.button-inactive {
+    background-color: gray;
+    color: white;
+    padding: 0px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 18px;
+    margin: 4px 2px;
+    cursor: pointer;
+    height: 50px;
+    width: 400px;
+}
+
+.button-clear {
+    background-color: #c0392b;
+    color: white;
+    padding: 0px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 18px;
+    margin: 4px 2px;
+    cursor: pointer;
+    height: 40px;
+    width: 400px;
+}
+
+</style>
+
+</head>
+<body>
+<div id="ipcheck">
+    <div id="logo">
+        IP Address Checker
+    </div>
+    <div id="input-div">
+        <p id="normal-text">
+          Paste your IP addresses here (separated by commas)..
+        </p>
+        <textarea class="input-items" id="input-text" rows="5" cols="35" placeholder="Paste your IP addresses here.." value="">
+        </textarea>
+    </div>
+    <div id="output-div">
+       <p id="normal-text">
+          Results
+        </p>
+        <textarea class="display-output" id="output-text" rows="5" cols="35" readonly=1 placeholder="Results here..." value="">
+        </textarea>
+    </div>
+    <div>
+        <button class="button-active" onclick="getTotalIPs();">Total IP addresses</button>
+    </div>
+    <div>
+        <button class="button-active" onclick="getTotalEmptyIPs();">Total empty IP addresses</button>
+    </div>
+    <div>
+        <button class="button-active" onclick="getTotalValidIPs();">Total valid IP addresses</button>
+    </div>
+    <div>
+        <button class="button-active" onclick="classifyIPs();">Classify between IPv4 and IPv6</button>
+    </div>
+    <div>
+        <button class="button-active" onclick="findCountry();">Find country information</button>
+    </div>
+    <div>
+        <button class="button-active" onclick="findBadIPs();">Find bad IP addresses</button>
+    </div>
+    <div>
+        <button class="button-clear" onclick="clearText();">Clear</button>
+    </div>
+
+</div>
+</body>
+
+<script type="text/javascript">
+</script>
+
+</html>
